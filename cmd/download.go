@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	netURL "net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -19,6 +21,10 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
+
+var langTestCommands = map[string]string{
+	"python": "python3 *_test.py",
+}
 
 // downloadCmd represents the download command
 var downloadCmd = &cobra.Command{
@@ -118,6 +124,44 @@ func runDownload(cfg config.Config, flags *pflag.FlagSet, args []string) error {
 	}
 	fmt.Fprintf(Err, "\nDownloaded to\n")
 	fmt.Fprintf(Out, "%s\n", metadata.Dir)
+
+	runTests(flags, metadata.Dir)
+
+	return nil
+}
+
+func runTests(flags *pflag.FlagSet, dir string) error {
+	runTests, err := flags.GetBool("run-tests")
+
+	if err != nil {
+		return err
+	}
+
+	if runTests {
+		track, err := flags.GetString("track")
+		if err != nil {
+			return err
+		}
+		command, ok := langTestCommands[track]
+		if !ok {
+			fmt.Fprintf(Err, "Test command not configured for "+track)
+			return nil
+		}
+
+		var out bytes.Buffer
+		cmd := exec.Command("bash", "-c", command)
+		cmd.Dir = dir
+		cmd.Stdout = &out
+		cmd.Stderr = &out
+		err = cmd.Run()
+		if err != nil {
+			fmt.Println(out.String())
+			return err
+		} else {
+			fmt.Printf("All tests \033[0;32mpassed\033[0m.\n")
+		}
+	}
+
 	return nil
 }
 
@@ -342,6 +386,7 @@ func setupDownloadFlags(flags *pflag.FlagSet) {
 	flags.StringP("uuid", "u", "", "the solution UUID")
 	flags.StringP("track", "t", "", "the track ID")
 	flags.StringP("exercise", "e", "", "the exercise slug")
+	flags.BoolP("run-tests", "r", false, "run exercise tests")
 	flags.StringP("team", "T", "", "the team slug")
 }
 
